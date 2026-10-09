@@ -7,6 +7,15 @@ npm run bridge            # http://127.0.0.1:4317 (BRIDGE_PORT to change)
 npm run test:bridge
 ```
 
+### Start at login
+
+```sh
+npm run bridge:install    # LaunchAgent com.medialuna.bridge; restarts it if it dies
+npm run bridge:uninstall
+```
+
+Logs go to `~/Library/Logs/medialuna-bridge.log`. The agent records the absolute paths of `node`, `claude` and this folder at install time, so re-run `bridge:install` if you move the repo or switch Node major versions.
+
 ## API
 
 - `GET /health` → `{ "ok": true }`
