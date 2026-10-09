@@ -16,6 +16,10 @@ process.stdin.on("end", () => {
   else if (mode === "crash") {
     process.stderr.write("boom\n");
     process.exit(3);
+  } else if (mode === "stubborn") {
+    process.on("SIGTERM", () => {});
+    if (process.env.FAKE_PID_FILE) writeFileSync(process.env.FAKE_PID_FILE, String(process.pid));
+    setTimeout(() => print({ is_error: false, result: "late" }), 10_000);
   } else if (mode === "slow") {
     if (process.env.FAKE_PID_FILE) writeFileSync(process.env.FAKE_PID_FILE, String(process.pid));
     setTimeout(() => print({ is_error: false, result: "late" }), 10_000);
