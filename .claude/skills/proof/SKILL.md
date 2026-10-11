@@ -31,3 +31,5 @@ Return one suggestion per fix:
 - `reason`: one short sentence naming the mistake (e.g. "Typo: 'teh' → 'the'.").
 
 ## Learned rules
+
+- I don’t like to open with question mark, just my preference _(2026-10-11)_
