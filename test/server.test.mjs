@@ -68,6 +68,22 @@ test("run pipes input to the runner from the bridge cwd and returns structured o
   assert.equal(await realpath(body.cwd), await realpath(skillsDir));
 });
 
+test("run passes an optional model to the runner as BRIDGE_MODEL", async () => {
+  const { base } = await startServer();
+  const withModel = await post(`${base}/skills/ok/run`, { input: "x", model: "haiku" });
+  assert.equal((await withModel.json()).model, "haiku");
+  const withId = await post(`${base}/skills/ok/run`, { input: "x", model: "claude-opus-5-5[1m]" });
+  assert.equal((await withId.json()).model, "claude-opus-5-5[1m]");
+});
+
+test("run rejects a malformed model with 400", async () => {
+  const { base } = await startServer();
+  for (const model of ["", 42, "--tools Bash", "Sonnet"]) {
+    const response = await post(`${base}/skills/ok/run`, { input: "x", model });
+    assert.equal(response.status, 400, `model ${JSON.stringify(model)}`);
+  }
+});
+
 test("run falls back to { text } when there is no structured output", async () => {
   const { base } = await startServer();
   const response = await post(`${base}/skills/text/run`, { input: "hi" });

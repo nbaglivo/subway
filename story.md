@@ -77,7 +77,7 @@ Claude Code has flags to turn off nearly everything it loads. The runner now:
 
 - passes the body of `SKILL.md` as the **entire** system prompt (`--system-prompt`)
 - skips settings, CLAUDE.md, hooks and plugins (`--setting-sources ""`), MCP (`--strict-mcp-config`), skills (`--disable-slash-commands`) and the parts that change per run (`--exclude-dynamic-system-prompt-sections`)
-- runs on **Sonnet** by default (`BRIDGE_MODEL` overrides it)
+- runs on **Sonnet** by default; a request can pass `"model"` to pick another one
 
 Same note, same suggestions:
 
@@ -93,4 +93,4 @@ That's roughly **80× less** usage per proofread, and the prompt is now exactly 
 
 - **Streaming.** `--output-format stream-json` would let the Proof panel show suggestions as they arrive.
 - **Process startup.** Each request still starts a fresh `claude` process. A long-lived worker could remove that, at the cost of more moving parts.
-- **Per-skill model.** Sonnet suits proofreading. A future skill might want Haiku or Opus, which could be a field in `SKILL.md`'s frontmatter.
+- **Per-skill default model.** Callers can already pick a model per request (`{ "input": "…", "model": "haiku" }`, Sonnet by default). A skill could also declare its own default in `SKILL.md`'s frontmatter.
