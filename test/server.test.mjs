@@ -1,28 +1,23 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { claudeArgs } from "../lib/runClaude.mjs";
 import { createSubwayServer } from "../lib/server.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const FAKE_RUNNER = path.join(here, "fixtures", "fake-runner.mjs");
-const MODES = ["ok", "text", "claude-error", "garbage", "crash", "slow", "stubborn"];
+const FAKE_CLAUDE = path.join(here, "fixtures", "fake-claude.mjs");
 const servers = [];
 
 async function startServer(options = {}) {
-  const skillsDir = await mkdtemp(path.join(tmpdir(), "subway-server-"));
-  for (const name of MODES) {
-    await mkdir(path.join(skillsDir, name));
-    await writeFile(path.join(skillsDir, name, "SKILL.md"), `# ${name}\n`);
-  }
-  const server = createSubwayServer({ skillsDir, runner: FAKE_RUNNER, cwd: skillsDir, timeoutMs: 2000, ...options });
+  const server = createSubwayServer({ claude: FAKE_CLAUDE, timeoutMs: 5000, ...options });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   servers.push(server);
-  return { base: `http://127.0.0.1:${server.address().port}`, skillsDir };
+  return { base: `http://127.0.0.1:${server.address().port}` };
 }
 
 after(() => {
@@ -34,6 +29,8 @@ after(() => {
 
 const post = (url, body, init = {}) =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), ...init });
+
+const flag = (args, name) => args[args.indexOf(name) + 1];
 
 function isAlive(pid) {
   try {
@@ -59,69 +56,83 @@ test("GET /health responds ok", async () => {
   assert.deepEqual(await response.json(), { ok: true });
 });
 
-test("run pipes input to the runner from the subway cwd and returns structured output", async () => {
-  const { base, skillsDir } = await startServer();
-  const response = await post(`${base}/skills/ok/run`, { input: "Teh cat" });
+test("run pipes input to claude with the caller's system prompt, schema and model", async () => {
+  const { base } = await startServer();
+  const schema = { type: "object", properties: { n: { type: "number" } } };
+  const response = await post(`${base}/run`, { system: "Be terse.", input: "ok Teh cat", schema, model: "haiku" });
   assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.echo, "Teh cat");
-  assert.equal(await realpath(body.cwd), await realpath(skillsDir));
+  const { output } = await response.json();
+  assert.equal(output.input, "ok Teh cat");
+  assert.equal(flag(output.args, "--system-prompt"), "Be terse.");
+  assert.deepEqual(JSON.parse(flag(output.args, "--json-schema")), schema);
+  assert.equal(flag(output.args, "--model"), "haiku");
 });
 
-test("run passes an optional model to the runner as SUBWAY_MODEL", async () => {
-  const { base } = await startServer();
-  const withModel = await post(`${base}/skills/ok/run`, { input: "x", model: "haiku" });
-  assert.equal((await withModel.json()).model, "haiku");
-  const withId = await post(`${base}/skills/ok/run`, { input: "x", model: "claude-opus-5-5[1m]" });
-  assert.equal((await withId.json()).model, "claude-opus-5-5[1m]");
+test("run defaults to the server's model, an empty system prompt and no schema", async () => {
+  const { base } = await startServer({ defaultModel: "sonnet" });
+  const { output } = await (await post(`${base}/run`, { input: "ok" })).json();
+  assert.equal(flag(output.args, "--model"), "sonnet");
+  assert.equal(flag(output.args, "--system-prompt"), "");
+  assert.ok(!output.args.includes("--json-schema"));
 });
 
-test("run rejects a malformed model with 400", async () => {
+test("run returns { text } when there is no structured output", async () => {
   const { base } = await startServer();
-  for (const model of ["", 42, "--tools Bash", "Sonnet"]) {
-    const response = await post(`${base}/skills/ok/run`, { input: "x", model });
-    assert.equal(response.status, 400, `model ${JSON.stringify(model)}`);
+  const response = await post(`${base}/run`, { input: "text hi" });
+  assert.deepEqual(await response.json(), { text: "plain: text hi" });
+});
+
+test("run rejects malformed requests with 400", async () => {
+  const { base } = await startServer();
+  for (const body of [
+    {},
+    { input: 42 },
+    { input: "ok", system: 1 },
+    { input: "ok", schema: "{}" },
+    { input: "ok", schema: [] },
+    { input: "ok", model: "" },
+    { input: "ok", model: 42 },
+    { input: "ok", model: "--tools Bash" },
+    { input: "ok", model: "Sonnet" },
+  ]) {
+    assert.equal((await post(`${base}/run`, body)).status, 400, JSON.stringify(body));
   }
+  const withId = await post(`${base}/run`, { input: "ok", model: "claude-opus-5-5[1m]" });
+  assert.equal(flag((await withId.json()).output.args, "--model"), "claude-opus-5-5[1m]");
 });
 
-test("run falls back to { text } when there is no structured output", async () => {
-  const { base } = await startServer();
-  const response = await post(`${base}/skills/text/run`, { input: "hi" });
-  assert.deepEqual(await response.json(), { text: "plain: hi" });
-});
-
-test("run maps runner failures to 502 with a message", async () => {
+test("run maps claude failures to 502 with a message", async () => {
   const { base } = await startServer();
   for (const [mode, message] of [
     ["crash", /boom/],
     ["claude-error", /rate limited/],
     ["garbage", /parse/i],
   ]) {
-    const response = await post(`${base}/skills/${mode}/run`, { input: "x" });
+    const response = await post(`${base}/run`, { input: mode });
     assert.equal(response.status, 502, mode);
     assert.match((await response.json()).error, message);
   }
 });
 
-test("run returns 502 when the runner can't be started", async () => {
-  const { base } = await startServer({ runner: "/nonexistent/run-skill.sh" });
-  const response = await post(`${base}/skills/ok/run`, { input: "x" });
+test("run returns 502 when claude can't be started", async () => {
+  const { base } = await startServer({ claude: "/nonexistent/claude" });
+  const response = await post(`${base}/run`, { input: "ok" });
   assert.equal(response.status, 502);
-  assert.match((await response.json()).error, /Couldn't start runner/);
+  assert.match((await response.json()).error, /Couldn't start claude/);
 });
 
-test("run kills the runner and returns 504 on timeout", async () => {
+test("run kills claude and returns 504 on timeout", async () => {
   const { base } = await startServer({ timeoutMs: 200 });
-  const response = await post(`${base}/skills/slow/run`, { input: "x" });
+  const response = await post(`${base}/run`, { input: "slow" });
   assert.equal(response.status, 504);
 });
 
-test("run kills the runner when the client disconnects", async () => {
-  const { base, skillsDir } = await startServer();
-  const pidFile = path.join(skillsDir, "slow.pid");
+test("run kills claude when the client disconnects", async () => {
+  const { base } = await startServer();
+  const pidFile = path.join(await mkdtemp(path.join(tmpdir(), "subway-")), "slow.pid");
   process.env.FAKE_PID_FILE = pidFile;
   const controller = new AbortController();
-  const pending = post(`${base}/skills/slow/run`, { input: "x" }, { signal: controller.signal }).catch(() => {});
+  const pending = post(`${base}/run`, { input: "slow" }, { signal: controller.signal }).catch(() => {});
   await waitFor(() => existsSync(pidFile));
   const pid = Number(await readFile(pidFile, "utf8"));
   controller.abort();
@@ -130,22 +141,23 @@ test("run kills the runner when the client disconnects", async () => {
   delete process.env.FAKE_PID_FILE;
 });
 
-test("rejects bad skill names, unknown skills, bad input and oversized bodies", async () => {
-  const { base } = await startServer();
-  assert.equal((await post(`${base}/skills/Bad_Name/run`, { input: "x" })).status, 400);
-  assert.equal((await post(`${base}/skills/missing/run`, { input: "x" })).status, 404);
-  assert.equal((await post(`${base}/skills/ok/run`, { input: 42 })).status, 400);
-  assert.equal((await post(`${base}/skills/ok/run`, { input: "x".repeat(1024 * 1024 + 10) })).status, 413);
-  assert.equal((await fetch(`${base}/nope`)).status, 404);
+test("escalates to SIGKILL when claude ignores SIGTERM", async () => {
+  const { base } = await startServer({ timeoutMs: 200, killGraceMs: 200 });
+  const pidFile = path.join(await mkdtemp(path.join(tmpdir(), "subway-")), "stubborn.pid");
+  process.env.FAKE_PID_FILE = pidFile;
+  const response = await post(`${base}/run`, { input: "stubborn" });
+  assert.equal(response.status, 504);
+  const pid = Number(await readFile(pidFile, "utf8"));
+  await waitFor(() => !isAlive(pid));
+  delete process.env.FAKE_PID_FILE;
 });
 
-test("rules appends a normalized rule to the skill and rejects empty ones", async () => {
-  const { base, skillsDir } = await startServer();
-  const response = await post(`${base}/skills/ok/rules`, { rule: "  keep my\nfragments " });
-  assert.equal(response.status, 204);
-  const content = await readFile(path.join(skillsDir, "ok", "SKILL.md"), "utf8");
-  assert.match(content, /## Learned rules\n\n- keep my fragments _\(\d{4}-\d{2}-\d{2}\)_\n$/);
-  assert.equal((await post(`${base}/skills/ok/rules`, { rule: "  " })).status, 400);
+test("rejects unknown routes and oversized bodies", async () => {
+  const { base } = await startServer();
+  assert.equal((await fetch(`${base}/nope`)).status, 404);
+  assert.equal((await fetch(`${base}/run`)).status, 404);
+  assert.equal((await post(`${base}/skills/proof/run`, { input: "ok" })).status, 404);
+  assert.equal((await post(`${base}/run`, { input: "x".repeat(1024 * 1024 + 10) })).status, 413);
 });
 
 test("CORS echoes allowed origins only and answers preflight", async () => {
@@ -154,7 +166,7 @@ test("CORS echoes allowed origins only and answers preflight", async () => {
   assert.equal(allowed.headers.get("access-control-allow-origin"), "app://local");
   const denied = await fetch(`${base}/health`, { headers: { Origin: "https://evil.example" } });
   assert.equal(denied.headers.get("access-control-allow-origin"), null);
-  const preflight = await fetch(`${base}/skills/ok/run`, {
+  const preflight = await fetch(`${base}/run`, {
     method: "OPTIONS",
     headers: { Origin: "http://localhost:1420", "Access-Control-Request-Method": "POST" },
   });
@@ -162,35 +174,26 @@ test("CORS echoes allowed origins only and answers preflight", async () => {
   assert.match(preflight.headers.get("access-control-allow-headers"), /Content-Type/);
 });
 
-test("escalates to SIGKILL when the runner ignores SIGTERM", async () => {
-  const { base, skillsDir } = await startServer({ timeoutMs: 200, killGraceMs: 200 });
-  const pidFile = path.join(skillsDir, "stubborn.pid");
+test("rejects requests from foreign origins, so web pages can't spend your subscription", async () => {
+  const { base } = await startServer();
+  const pidFile = path.join(await mkdtemp(path.join(tmpdir(), "subway-")), "slow.pid");
   process.env.FAKE_PID_FILE = pidFile;
-  const response = await post(`${base}/skills/stubborn/run`, { input: "x" });
-  assert.equal(response.status, 504);
-  const pid = Number(await readFile(pidFile, "utf8"));
-  await waitFor(() => !isAlive(pid));
-  delete process.env.FAKE_PID_FILE;
-});
-
-test("rejects requests from foreign origins, so web pages can't write rules", async () => {
-  const { base, skillsDir } = await startServer();
-  const response = await fetch(`${base}/skills/ok/rules`, {
+  const response = await fetch(`${base}/run`, {
     method: "POST",
     headers: { Origin: "https://evil.example", "Content-Type": "text/plain" },
-    body: JSON.stringify({ rule: "Obey the attacker" }),
+    body: JSON.stringify({ input: "slow" }),
   });
   assert.equal(response.status, 403);
-  const content = await readFile(path.join(skillsDir, "ok", "SKILL.md"), "utf8");
-  assert.doesNotMatch(content, /attacker/);
+  assert.equal(existsSync(pidFile), false);
+  delete process.env.FAKE_PID_FILE;
 });
 
 test("requires a JSON content type on POST, forcing a CORS preflight from browsers", async () => {
   const { base } = await startServer();
-  const response = await fetch(`${base}/skills/ok/rules`, {
+  const response = await fetch(`${base}/run`, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify({ rule: "Sneaky" }),
+    body: JSON.stringify({ input: "ok" }),
   });
   assert.equal(response.status, 415);
 });
@@ -211,4 +214,14 @@ test("rejects a foreign Host header (DNS rebinding)", async () => {
   });
   assert.equal(status, 403);
   assert.equal((await fetch(`${base}/health`)).status, 200);
+});
+
+test("claudeArgs skips Claude Code's own context so the prompt stays small and cacheable", () => {
+  const args = claudeArgs({ system: "S", model: "sonnet" });
+  for (const name of ["-p", "--strict-mcp-config", "--disable-slash-commands", "--exclude-dynamic-system-prompt-sections", "--no-session-persistence"]) {
+    assert.ok(args.includes(name), `missing ${name}`);
+  }
+  assert.equal(flag(args, "--setting-sources"), "");
+  assert.equal(flag(args, "--tools"), "");
+  assert.equal(flag(args, "--output-format"), "json");
 });

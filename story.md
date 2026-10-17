@@ -101,8 +101,31 @@ I named it **subway**: **sub**scription + gate**way**. It's a little ironic, sin
 
 What changed in the move: `BRIDGE_*` variables became `SUBWAY_*`, the LaunchAgent became `com.nbaglivo.subway`, and the browser origins allowed to call it (once hardcoded to Medialuna's) are now configurable through `SUBWAY_ORIGINS`.
 
+## A clean cut
+
+Writing the README for the new repo, one thing looked wrong. subway still knew about skills: it kept the `proof` prompt, its schema and my learned rules in its own folders, and had an endpoint just for appending rules. None of that is subway's business. My rule "don't open with a question mark" is about my writing, and it belongs with my notes.
+
+So I made the cut. subway became a plain local LLM API with one endpoint:
+
+```
+POST /run  { "system": "...", "input": "...", "schema": { ... }, "model": "haiku" }
+→ { "output": { ... } }  or  { "text": "..." }
+```
+
+It's stateless and has no files on disk. It doesn't even need the bash runner anymore, because it spawns `claude` directly. Medialuna now owns everything about Proof:
+
+- **The prompt is a note.** `Proof prompt.md` sits at the root of my vault. I edit it in Medialuna like any other note, and Proof sends it as `system` every time.
+- **Learned rules are edits to that note.** Rejecting a suggestion and typing a rule appends a dated bullet to its `## Learned rules` section. No HTTP call is involved.
+- **The schema lives in code**, next to the code that parses the suggestions, because the two have to agree.
+
+I briefly considered copying Anthropic's `/v1/messages` instead, so the official SDK would work by changing its base URL. I decided against it: `claude -p` takes one prompt, not a conversation with tool calls, `temperature` and `max_tokens`. A copy that looks compatible but quietly ignores half the fields is worse than a small API that's honest about what it does.
+
+The trade-off: before, a caller could only run the skills I'd defined. Now anything allowed to call subway can run any prompt on my subscription. With tools disabled, and only `127.0.0.1` and a short list of browser origins allowed in, the worst case is someone using up my usage limit, which I can live with.
+
+Caching still works, because Proof sends the same note as `system` every time. The prompt only changes when I edit the note or teach it a rule.
+
 ## Still on the table
 
 - **Streaming.** `--output-format stream-json` would let the Proof panel show suggestions as they arrive.
 - **Process startup.** Each request still starts a fresh `claude` process. A long-lived worker could remove that, at the cost of more moving parts.
-- **Per-skill default model.** Callers can already pick a model per request (`{ "input": "…", "model": "haiku" }`, Sonnet by default). A skill could also declare its own default in `SKILL.md`'s frontmatter.
+- **Usage in the response.** subway drops the token counts `claude -p` reports. Returning them would make it easy to check that caching keeps working.
