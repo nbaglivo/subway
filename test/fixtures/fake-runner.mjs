@@ -9,7 +9,7 @@ let input = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => (input += chunk));
 process.stdin.on("end", () => {
-  if (mode === "ok") print({ is_error: false, result: "", structured_output: { echo: input, cwd: process.cwd(), model: process.env.BRIDGE_MODEL ?? null } });
+  if (mode === "ok") print({ is_error: false, result: "", structured_output: { echo: input, cwd: process.cwd(), model: process.env.SUBWAY_MODEL ?? null } });
   else if (mode === "text") print({ is_error: false, result: `plain: ${input}` });
   else if (mode === "claude-error") print({ is_error: true, result: "rate limited" });
   else if (mode === "garbage") process.stdout.write("not json");

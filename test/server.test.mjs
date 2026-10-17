@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createBridgeServer } from "../lib/server.mjs";
+import { createSubwayServer } from "../lib/server.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FAKE_RUNNER = path.join(here, "fixtures", "fake-runner.mjs");
@@ -14,12 +14,12 @@ const MODES = ["ok", "text", "claude-error", "garbage", "crash", "slow", "stubbo
 const servers = [];
 
 async function startServer(options = {}) {
-  const skillsDir = await mkdtemp(path.join(tmpdir(), "bridge-server-"));
+  const skillsDir = await mkdtemp(path.join(tmpdir(), "subway-server-"));
   for (const name of MODES) {
     await mkdir(path.join(skillsDir, name));
     await writeFile(path.join(skillsDir, name, "SKILL.md"), `# ${name}\n`);
   }
-  const server = createBridgeServer({ skillsDir, runner: FAKE_RUNNER, cwd: skillsDir, timeoutMs: 2000, ...options });
+  const server = createSubwayServer({ skillsDir, runner: FAKE_RUNNER, cwd: skillsDir, timeoutMs: 2000, ...options });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   servers.push(server);
   return { base: `http://127.0.0.1:${server.address().port}`, skillsDir };
@@ -59,7 +59,7 @@ test("GET /health responds ok", async () => {
   assert.deepEqual(await response.json(), { ok: true });
 });
 
-test("run pipes input to the runner from the bridge cwd and returns structured output", async () => {
+test("run pipes input to the runner from the subway cwd and returns structured output", async () => {
   const { base, skillsDir } = await startServer();
   const response = await post(`${base}/skills/ok/run`, { input: "Teh cat" });
   assert.equal(response.status, 200);
@@ -68,7 +68,7 @@ test("run pipes input to the runner from the bridge cwd and returns structured o
   assert.equal(await realpath(body.cwd), await realpath(skillsDir));
 });
 
-test("run passes an optional model to the runner as BRIDGE_MODEL", async () => {
+test("run passes an optional model to the runner as SUBWAY_MODEL", async () => {
   const { base } = await startServer();
   const withModel = await post(`${base}/skills/ok/run`, { input: "x", model: "haiku" });
   assert.equal((await withModel.json()).model, "haiku");
@@ -149,9 +149,9 @@ test("rules appends a normalized rule to the skill and rejects empty ones", asyn
 });
 
 test("CORS echoes allowed origins only and answers preflight", async () => {
-  const { base } = await startServer();
-  const allowed = await fetch(`${base}/health`, { headers: { Origin: "tauri://localhost" } });
-  assert.equal(allowed.headers.get("access-control-allow-origin"), "tauri://localhost");
+  const { base } = await startServer({ allowedOrigins: ["app://local", "http://localhost:1420"] });
+  const allowed = await fetch(`${base}/health`, { headers: { Origin: "app://local" } });
+  assert.equal(allowed.headers.get("access-control-allow-origin"), "app://local");
   const denied = await fetch(`${base}/health`, { headers: { Origin: "https://evil.example" } });
   assert.equal(denied.headers.get("access-control-allow-origin"), null);
   const preflight = await fetch(`${base}/skills/ok/run`, {

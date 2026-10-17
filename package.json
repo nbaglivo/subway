@@ -1,0 +1,13 @@
+{
+  "name": "subway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn prompt files into local HTTP endpoints, powered by the AI subscription you already pay for.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "agent:install": "bin/launch-agent.sh install",
+    "agent:uninstall": "bin/launch-agent.sh uninstall"
+  }
+}

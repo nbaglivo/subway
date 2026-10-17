@@ -12,7 +12,7 @@ const SKILL_DIR = path.join(here, "..", ".claude", "skills", "proof");
 
 /** Runs run-skill.sh against a fake `claude` that records its argv and stdin. */
 async function runWithFakeClaude(skill, input, env = {}) {
-  const binDir = await mkdtemp(path.join(tmpdir(), "bridge-claude-"));
+  const binDir = await mkdtemp(path.join(tmpdir(), "subway-claude-"));
   const fake = path.join(binDir, "claude");
   await writeFile(
     fake,
@@ -51,9 +51,9 @@ test("skips Claude Code's own context so the prompt stays small and cacheable", 
   assert.equal(flag(args, "--tools"), "");
 });
 
-test("defaults to sonnet and honours BRIDGE_MODEL", async () => {
+test("defaults to sonnet and honours SUBWAY_MODEL", async () => {
   assert.equal(flag((await runWithFakeClaude("proof", "x")).args, "--model"), "sonnet");
-  assert.equal(flag((await runWithFakeClaude("proof", "x", { BRIDGE_MODEL: "haiku" })).args, "--model"), "haiku");
+  assert.equal(flag((await runWithFakeClaude("proof", "x", { SUBWAY_MODEL: "haiku" })).args, "--model"), "haiku");
 });
 
 test("forces structured output when the skill has a schema.json", async () => {

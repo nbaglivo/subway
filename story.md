@@ -1,4 +1,6 @@
-# The bridge: using my Claude subscription as an API
+# subway: using my Claude subscription as an API
+
+*subway started life inside Medialuna as "the bridge", which is what the story calls it until it moves out.*
 
 ## Why
 
@@ -77,7 +79,7 @@ Claude Code has flags to turn off nearly everything it loads. The runner now:
 
 - passes the body of `SKILL.md` as the **entire** system prompt (`--system-prompt`)
 - skips settings, CLAUDE.md, hooks and plugins (`--setting-sources ""`), MCP (`--strict-mcp-config`), skills (`--disable-slash-commands`) and the parts that change per run (`--exclude-dynamic-system-prompt-sections`)
-- runs on **Sonnet** by default; a request can pass `"model"` to pick another one
+- runs on **Sonnet** by default; a request can pass `"model"` to pick another one (`SUBWAY_MODEL` changes the default)
 
 Same note, same suggestions:
 
@@ -88,6 +90,16 @@ Same note, same suggestions:
 | After, Sonnet, 2nd call | 0 new | 1,710 | 2.4s | **$0.0015** |
 
 That's roughly **80× less** usage per proofread, and the prompt is now exactly my `SKILL.md` and nothing else. The bridge keeps everything I liked about it: no API key, skills as folders, rules I can teach. Under the hood it now behaves much more like a plain API call.
+
+## Its own repo, and a name
+
+By then the bridge had nothing to do with Medialuna except being its first client. Medialuna only talks to it over HTTP. So it moved into its own repo, with its git history kept.
+
+Moving it out meant deciding what it actually *is*. It's not an API gateway. A gateway forwards your API requests, prompts and all, and adds routing and metering. Here the caller never writes a prompt: it calls a named skill, and the skill owns the prompt, the schema and the learned rules. It's closer to **prompts served as functions over HTTP**, running on a flat-rate subscription instead of a per-token bill.
+
+I named it **subway**: **sub**scription + gate**way**. It's a little ironic, since it isn't really a gateway. A subway also runs on a flat fare, which fits.
+
+What changed in the move: `BRIDGE_*` variables became `SUBWAY_*`, the LaunchAgent became `com.nbaglivo.subway`, and the browser origins allowed to call it (once hardcoded to Medialuna's) are now configurable through `SUBWAY_ORIGINS`.
 
 ## Still on the table
 

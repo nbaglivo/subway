@@ -51,7 +51,7 @@ test("withRuleAppended fills an empty rules section", () => {
 });
 
 test("appendRule and skillExists work against a skills folder on disk", async () => {
-  const skillsDir = await mkdtemp(path.join(tmpdir(), "bridge-skills-"));
+  const skillsDir = await mkdtemp(path.join(tmpdir(), "subway-skills-"));
   await mkdir(path.join(skillsDir, "proof"));
   await writeFile(path.join(skillsDir, "proof", "SKILL.md"), "# Proof\n");
 

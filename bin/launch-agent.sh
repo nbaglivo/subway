@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Installs (or removes) a macOS LaunchAgent that starts the bridge at login
+# Installs (or removes) a macOS LaunchAgent that starts subway at login
 # and restarts it if it dies.
-# Usage: bridge/bin/launch-agent.sh install|uninstall
+# Usage: bin/launch-agent.sh install|uninstall
 set -euo pipefail
 
-label="com.medialuna.bridge"
+label="com.nbaglivo.subway"
 plist="$HOME/Library/LaunchAgents/$label.plist"
-log="$HOME/Library/Logs/medialuna-bridge.log"
+log="$HOME/Library/Logs/subway.log"
 domain="gui/$(id -u)"
 
 case "${1:-}" in
   install)
-    bridge_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     node_bin="$(command -v node)" || { echo "node not found on PATH" >&2; exit 1; }
     claude_bin="$(command -v claude)" || { echo "claude not found on PATH" >&2; exit 1; }
     # launchd starts with a bare PATH; run-skill.sh needs to find claude.
@@ -28,10 +28,10 @@ case "${1:-}" in
   <key>ProgramArguments</key>
   <array>
     <string>$node_bin</string>
-    <string>$bridge_dir/server.mjs</string>
+    <string>$root_dir/server.mjs</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>$bridge_dir</string>
+  <string>$root_dir</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
