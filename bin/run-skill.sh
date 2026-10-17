@@ -10,10 +10,24 @@ bridge_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 skill_dir="$bridge_dir/.claude/skills/$skill"
 [[ -f "$skill_dir/SKILL.md" ]] || { echo "unknown skill: $skill" >&2; exit 2; }
 
-# Project skills resolve relative to the working directory.
-cd "$bridge_dir"
+# SKILL.md minus its frontmatter becomes the whole system prompt.
+system_prompt="$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$skill_dir/SKILL.md")"
 
-args=(-p "/$skill" --tools "" --output-format json --no-session-persistence)
+# Skip everything Claude Code would otherwise load (its agent prompt,
+# CLAUDE.md, hooks, plugins, MCP, the date and git status) so the prompt is
+# small and identical on every run, which lets the prompt cache hit.
+args=(
+  -p
+  --model "${BRIDGE_MODEL:-sonnet}"
+  --system-prompt "$system_prompt"
+  --tools ""
+  --strict-mcp-config
+  --setting-sources ""
+  --disable-slash-commands
+  --exclude-dynamic-system-prompt-sections
+  --no-session-persistence
+  --output-format json
+)
 if [[ -f "$skill_dir/schema.json" ]]; then
   args+=(--json-schema "$(cat "$skill_dir/schema.json")")
 fi
